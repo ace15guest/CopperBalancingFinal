@@ -1,0 +1,6 @@
+** Message: Trying to open C:\Users\AsaGuest\Documents\Projects\Copper_Balancing_HDP\Assets\gerbv\'C:\Users\AsaGuest\Downloads\03KV627,P39185,2025-11-10,104109\03KV627,P39185,R0,GERBER,ASB.ART': Invalid argument
+** Message: Could not read C:\Users\AsaGuest\Documents\Projects\Copper_Balancing_HDP\Assets\gerbv\'C:\Users\AsaGuest\Downloads\03KV627,P39185,2025-11-10,104109\03KV627,P39185,R0,GERBER,ASB.ART'[0]
+** Message: Trying to open C:\Users\AsaGuest\Documents\Projects\Copper_Balancing_HDP\Assets\gerbv\'C:\Users\AsaGuest\Downloads\03KV627,P39185,2025-11-10,104109\03KV627,P39185,R0,GERBER,RTR.ART': Invalid argument
+** Message: Could not read C:\Users\AsaGuest\Documents\Projects\Copper_Balancing_HDP\Assets\gerbv\'C:\Users\AsaGuest\Downloads\03KV627,P39185,2025-11-10,104109\03KV627,P39185,R0,GERBER,RTR.ART'[0]
+
+** (gerbv.exe:17104): CRITICAL **: Exporting error to file "'C:\Users\AsaGuest\Downloads\03KV627,P39185,2025-11-10,104109\images\03KV627,P39185,R0,GERBER,ASB.ART.png'"
