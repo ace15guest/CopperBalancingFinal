@@ -12,8 +12,8 @@ from itertools import product
 from typing import List, Dict, Any
 import numpy as np
 import pandas as pd
-from array_operations.array_utils import fill_nans_nd, get_border_mask, idw_fill_2d, nearest_border_fill_true_2d, fill_border_with_percent_max
-from array_operations.array_utils import multiple_layers_weighted
+from lib.array_operations.array_utils import fill_nans_nd, get_border_mask, idw_fill_2d, nearest_border_fill_true_2d, fill_border_with_percent_max
+from lib.array_operations.array_utils import multiple_layers_weighted
 
 
 def parameter_sweep_analysis(

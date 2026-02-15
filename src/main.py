@@ -5,7 +5,7 @@ This module provides the main execution logic and CLI interface.
 """
 
 from lib.gerber_operations.parameter_sweep import parameter_sweep_analysis
-from .config import Config
+from src.config import Config
 
 
 def main():
@@ -16,11 +16,11 @@ def main():
     window_sizes = Config.PARAMETER_SWEEPS["window_sizes"]
     dx_choices = Config.PARAMETER_SWEEPS["dx_choices"]
     gradient_methods = Config.PARAMETER_SWEEPS["gradient_methods"]
-    percent_max_fill_values = Config.PARAMETER_SWEEPS["percent_max_fill_values"]
-    all_akro_files = Config.PARAMETER_SWEEPS["all_akro_files"]
-    dpi = Config.PARAMETER_SWEEPS["dpi"]
-    edge_fill = Config.PARAMETER_SWEEPS["edge_fill"]
-    blur = Config.PARAMETER_SWEEPS["blur"]
+    percent_max_fill_values = Config.PARAMETER_SWEEPS["percent_max_fills"]
+    all_akro_files = Config.ALL_AKRO_FILES
+    dpi = Config.PARAMETER_SWEEPS["dpis"]
+    edge_fill = Config.PARAMETER_SWEEPS["edge_fills"]
+    blur = Config.PARAMETER_SWEEPS["blur_types"]
     radii = Config.PARAMETER_SWEEPS["radii"]
     sigmas = Config.PARAMETER_SWEEPS["sigmas"]
     percent_area_from_centers = Config.PARAMETER_SWEEPS["percent_area_from_centers"]
