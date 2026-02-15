@@ -4,7 +4,7 @@ Configuration management for the Copper Balancing Image Processing application.
 This module contains all configuration settings and constants used throughout the project.
 """
 
-import os
+import re
 from pathlib import Path
 
 
@@ -29,14 +29,20 @@ class Config:
         'signal': r'l\d+_signal',
         'plane': r'l\d+_plane',
     }
-    
+    # Match: 1oz, 0.5oz, 0_5oz, 1.0oz, optionally with spaces, and require '_' or end after 'oz'
+    _OZ_RE = re.compile(r'(\d+(?:[._]\d+)?)\s*oz(?=$|_)', re.IGNORECASE)
     # Quadrant identifiers
     QUADRANTS = ['Q1', 'Q2', 'Q3', 'Q4', 'Global']
     
     # File extensions
     GERBER_EXTENSIONS = ['.gbr']
     IMAGE_EXTENSIONS = ['.png', '.jpg', '.jpeg']
-    
+
+    # Akrometrix Data Folders
+    TOP_DAT_FOLDER =  ASSETS_DIR / 'AkroFiles' / 'TopDatFiles'
+    TOD_DAT_FILES = [p for p in TOP_DAT_FOLDER.iterdir() if p.is_file()]
+    BOT_AKFRO_FOLDER = ASSETS_DIR / 'AkroFiles' / 'BottomDatFiles'
+    BOT_AKRO_FILES = [p for p in BOT_AKFRO_FOLDER.iterdir() if p.is_file()]
     # Processing options
     USE_COMPRESSION = True
     PARALLEL_WORKERS = 4
@@ -50,7 +56,6 @@ class Config:
     'blur_kernels': [3, 5, 7, 9],
     'gaussian_sigmas': [0.5, 1.0, 1.5, 2.0],
     'blur_types': ['box', 'gaussian'],
-
     }
 
     @classmethod
