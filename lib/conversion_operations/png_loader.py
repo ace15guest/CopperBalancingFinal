@@ -24,19 +24,33 @@ def load_png(filepath: str, grayscale: bool = True) -> np.ndarray:
     raise NotImplementedError("PNG loading not yet implemented")
 
 
-def png_to_array(filepath: str, normalize: bool = False) -> np.ndarray:
-    """
-    Load PNG and optionally normalize to [0, 1] range.
+def bitmap_to_array(bitmap_path, inverted=False):
+    """Convert bitmap image to normalized numpy array.
     
-    Parameters:
-        filepath (str): Path to PNG file
-        normalize (bool, optional): Normalize to [0, 1]. Default: False
+    Args:
+        bitmap_path: Path to the bitmap file
+        inverted: If True, invert the pixel values
         
     Returns:
-        np.ndarray: Image array, normalized if requested
+        numpy array or None if conversion fails
     """
-    # TODO: Implement PNG to array with normalization
-    raise NotImplementedError("PNG to array conversion not yet implemented")
+    try:
+        with Image.open(bitmap_path) as img:
+            gray = img.convert('L')  # Convert to grayscale
+            array = np.array(gray)
+            
+            # Normalize array, handling edge case of all-zero images
+            max_val = np.max(array)
+            if max_val > 0:
+                array = array * 255.0 / max_val
+            
+            if inverted:
+                array = 255 - array
+            
+            return array
+    except Exception as e:
+        print(f"Error converting bitmap at {bitmap_path}: {e}")
+        return None
 
 
 def validate_png(filepath: str) -> bool:

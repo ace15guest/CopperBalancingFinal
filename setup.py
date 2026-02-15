@@ -17,7 +17,7 @@ setup(
     description="A modular Python framework for processing PCB Gerber files with image processing operations and comparing them to real data",
     long_description=long_description,
     long_description_content_type="text/markdown",
-    url="https://github.com/ace15guest/copper-balancing",
+    url="https://github.com/ace15guest/CopperBalancingFinal",
     packages=find_packages(include=['src', 'src.*', 'lib', 'lib.*']),
     classifiers=[
         "Development Status :: 3 - Alpha",

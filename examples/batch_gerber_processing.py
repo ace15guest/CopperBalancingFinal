@@ -5,7 +5,7 @@ Demonstrates batch processing of Gerber files across multiple quadrants.
 """
 
 from lib.gerber_operations import get_quadrant_layers, process_layer_stack
-from lib.array_operations import gaussian_blur
+from lib.array_operations import blur_2d_gaussian
 from lib.conversion_operations import save_npz
 
 

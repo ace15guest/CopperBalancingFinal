@@ -5,7 +5,7 @@ Demonstrates basic usage of box and Gaussian blur filters.
 """
 
 from lib.conversion_operations import load_png
-from lib.array_operations import box_blur, gaussian_blur
+from lib.array_operations import box_blur,blur_2d_gaussian
 
 
 def main():
