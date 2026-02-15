@@ -12,17 +12,8 @@ from itertools import product
 from typing import List, Dict, Any
 import numpy as np
 import pandas as pd
-from array_operations.array_utils import fill_nans_nd
-# Import required functions (adjust imports as needed based on your codebase)
-# from lib.array_operations.blur_filters import blur_call
-# from lib.array_operations.image_processing import (
-#     multiple_layers_weighted, get_border_mask, shrink_array,
-#     rescale_to_shared_minmax, center_crop_by_area
-# )
-# from lib.array_operations.array_utils import (
-#     fill_nans_nd, idw_fill_2d, nearest_border_fill_true_2d,
-#     fill_border_with_percent_max, align_and_compare, analyze_gradients
-# )
+from array_operations.array_utils import fill_nans_nd, get_border_mask, idw_fill_2d, nearest_border_fill_true_2d, fill_border_with_percent_max
+from array_operations.array_utils import multiple_layers_weighted
 
 
 def parameter_sweep_analysis(
@@ -38,7 +29,7 @@ def parameter_sweep_analysis(
     sigmas: List[float],
     percent_area_from_centers: List[float],
     gerber_folders: List[Path],
-    out_file_name: str = "Assets/DataOutput/data_out.csv"
+    output_file_path: str = "Assets/DataOutput/data_out.csv"
 ) -> pd.DataFrame:
     """
     Perform comprehensive parameter sweep analysis on Gerber processing.
@@ -59,7 +50,7 @@ def parameter_sweep_analysis(
         sigmas: List of sigma values for Gaussian blur
         percent_area_from_centers: List of percent area from center for cropping
         gerber_folders: List of Gerber folder paths to process
-        out_file_name: Output CSV file path (default: "Assets/DataOutput/data_out.csv")
+        output_file_path: Output CSV file path (default: "Assets/DataOutput/data_out.csv")
         
     Returns:
         pd.DataFrame: Results dataframe with all metrics
@@ -140,8 +131,8 @@ def parameter_sweep_analysis(
             continue
         
         # Check if already processed
-        if Path(out_file_name).exists():
-            existing_df = pd.read_csv(out_file_name)
+        if Path(output_file_path).exists():
+            existing_df = pd.read_csv(output_file_path)
             if name in list(existing_df["Name"]):
                 print(f"Combination {name} already processed, skipping.")
                 continue
@@ -150,7 +141,7 @@ def parameter_sweep_analysis(
         if "Global" not in str(akro_file) or gerber_location not in str(akro_file):
             continue
         else:
-            dat_load = np.loadtxt(akro_file)
+            dat_load = np.loadtxt(str(akro_file))
             dat_file_filled = np.where(dat_load == 9999.0, np.nan, dat_load)
             dat_file_9999_filled = fill_nans_nd(dat_file_filled, 'iterative')
         
@@ -169,7 +160,7 @@ def parameter_sweep_analysis(
             calculated_layers_preblend_edge_mask = nearest_border_fill_true_2d(calculated_layers_preblend, mask=mask)
         elif edge_fill_method == 'percent_max':
             calculated_layers_preblend_edge_mask = fill_border_with_percent_max(
-                calculated_layers_preblend, mask=mask, percent=percent_max_fill
+                calculated_layers_preblend, mask=mask, percent=int(percent_max_fill)
             )
         
         # Apply blur
@@ -235,7 +226,7 @@ def parameter_sweep_analysis(
         
         # Save to CSV
         out_df = pd.DataFrame([out_info])
-        out_df.to_csv(out_file_name, mode="a", index=False, header=write_header)
+        out_df.to_csv(output_file_path, mode="a", index=False, header=write_header)
         
         # Cleanup
         del out_df
@@ -245,8 +236,8 @@ def parameter_sweep_analysis(
         print(f"Processing with DPI: {dpi_value}, Edge Fill: {edge_fill_method}, Blur: {blur_type}")
     
     # Return final results
-    if Path(out_file_name).exists():
-        return pd.read_csv(out_file_name)
+    if Path(output_file_path).exists():
+        return pd.read_csv(output_file_path)
     else:
         return pd.DataFrame()
 

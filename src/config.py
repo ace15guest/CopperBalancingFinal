@@ -47,9 +47,15 @@ class Config:
     USE_COMPRESSION = True
     PARALLEL_WORKERS = 4
     
+    # Output file names
+    DATA_OUTPUT_FILE = OUTPUT_DIR / 'data_out.csv'
+    
+
+
     # Parameter Sweeping
     # Parameter sweep configurations
     PARAMETER_SWEEPS = {
+    'window_sizes': [1, 3, 5, 7, 9],
     'edge_fills': [0, 5, 10, 15, 20],  # pixels
     'dpis': [50, 100, 200, 300, 500, 700],
     'percent_max_fills': [0.5, 0.6, 0.7, 0.8, 0.9, 1.0],
