@@ -22,6 +22,7 @@ Performance Optimizations:
 - Efficient processed combinations tracking with sets
 - Parallel processing with multiprocessing for CPU-bound operations
 - Optimized array operations with minimal copying
+- Progress bars with tqdm for better user feedback
 """
 
 from pathlib import Path
@@ -31,6 +32,7 @@ import numpy as np
 import pandas as pd
 from multiprocessing import Pool, cpu_count
 from functools import partial
+from tqdm import tqdm
 
 # Import array operation utilities
 from lib.array_operations.border_operations import get_border_mask, center_crop_by_area
@@ -452,8 +454,9 @@ def parameter_sweep_analysis(
             processed_pngs_folder=processed_pngs_folder
         )
         
-        # Process in parallel
+        # Process in parallel with progress bar
         with Pool(processes=n_workers) as pool:
+            pbar = tqdm(total=len(unprocessed_items), desc="Processing combinations", unit="combo")
             for i, result in enumerate(pool.imap_unordered(process_func, unprocessed_items), 1):
                 if result is not None:
                     results_batch.append(result)
@@ -466,14 +469,14 @@ def parameter_sweep_analysis(
                         batch_df.to_csv(output_file_path, mode="a", index=False, header=write_header)
                         write_header = False
                         results_batch = []
-                        print(f"Progress: {i}/{len(unprocessed_items)} ({processed} processed)")
+                        pbar.set_postfix({"processed": processed, "batches_written": i // batch_size})
                 
-                elif i % 100 == 0:
-                    print(f"Progress: {i}/{len(unprocessed_items)} ({processed} processed)")
+                pbar.update(1)
+            pbar.close()
     else:
-        # Sequential processing
+        # Sequential processing with progress bar
         print("Using sequential processing")
-        for i, item in enumerate(unprocessed_items, 1):
+        for item in tqdm(unprocessed_items, desc="Processing combinations", unit="combo"):
             result = _process_single_combination(
                 item, akro_cache, npz_cache, processed_pngs_folder
             )
@@ -489,10 +492,6 @@ def parameter_sweep_analysis(
                     batch_df.to_csv(output_file_path, mode="a", index=False, header=write_header)
                     write_header = False
                     results_batch = []
-                    print(f"Progress: {i}/{len(unprocessed_items)} ({processed} processed)")
-            
-            elif i % 100 == 0:
-                print(f"Progress: {i}/{len(unprocessed_items)} ({processed} processed)")
     
     # ========================================
     # Write Remaining Results
@@ -500,7 +499,8 @@ def parameter_sweep_analysis(
     if results_batch:
         batch_df = pd.DataFrame(results_batch)
         batch_df.to_csv(output_file_path, mode="a", index=False, header=write_header)
-        print(f"Final: {len(unprocessed_items)} combinations processed ({processed} successful)")
+    
+    print(f"\n✓ Complete: {len(unprocessed_items)} combinations processed ({processed} successful)")
     
     # ========================================
     # Return Final Results

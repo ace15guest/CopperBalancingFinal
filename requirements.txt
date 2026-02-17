@@ -8,6 +8,9 @@ plotly>=5.18.0
 dash>=2.14.0
 dash-bootstrap-components>=1.5.0
 
+# Progress bars
+tqdm>=4.66.0
+
 # Image processing
 Pillow>=10.0.0
 
