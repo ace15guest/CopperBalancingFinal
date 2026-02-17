@@ -12,8 +12,11 @@ from itertools import product
 from typing import List, Dict, Any
 import numpy as np
 import pandas as pd
-from lib.array_operations.array_utils import fill_nans_nd, get_border_mask, idw_fill_2d, nearest_border_fill_true_2d, fill_border_with_percent_max
-from lib.array_operations.array_utils import multiple_layers_weighted
+from lib.array_operations.border_operations import get_border_mask, center_crop_by_area
+from lib.array_operations.interpolation import fill_nans_nd, idw_fill_2d, nearest_border_fill_true_2d, fill_border_with_percent_max
+from lib.array_operations.array_utils import multiple_layers_weighted, shrink_array, rescale_to_shared_minmax
+from lib.array_operations.gradient_analysis import analyze_gradients
+from lib.array_operations.comparison import align_and_compare
 
 
 def parameter_sweep_analysis(
@@ -28,8 +31,10 @@ def parameter_sweep_analysis(
     radii: List[int],
     sigmas: List[float],
     percent_area_from_centers: List[float],
-    gerber_folders: List[Path],
-    output_file_path: str = "Assets/DataOutput/data_out.csv"
+    gerber_folders: List[str],
+    output_file_path: str = "Assets/DataOutput/data_out.csv",
+    processed_pngs_folder: str = "Assets/ProcessedPNGs/",
+
 ) -> pd.DataFrame:
     """
     Perform comprehensive parameter sweep analysis on Gerber processing.
@@ -69,7 +74,10 @@ def parameter_sweep_analysis(
     # Add other imports as needed
     
     # Initialize output tracking
-    write_header = True
+    if Path(output_file_path).exists:
+        write_header = False
+    else:
+        write_header = True
     count = 0
     
     # Create all combinations
@@ -84,11 +92,9 @@ def parameter_sweep_analysis(
         count += 1
         print(f"Processing combination {count}/{len(items)}")
         
-        info = [folder, window, dx, gradient_method, percent_max_fill, akro_file, 
-                dpi_value, edge_fill_method, blur_type, radius, sigma, percent_from_cntr]
         
         # Extract metadata from paths
-        gerber_location = str(folder).split('\\')[-1]
+        gerber_location = str(folder).replace("/", "\\").split('\\')[-1]
         side = str(akro_file).split('\\')[-1].split('_')[1]
         company = str(akro_file).split('\\')[-1].split('-')[0]
         material = str(akro_file).split('\\')[-1].split('-')[1]
@@ -99,9 +105,9 @@ def parameter_sweep_analysis(
         if edge_fill_method == "percent_max":
             name += f"{percent_max_fill}_"
         elif edge_fill_method == "nearest":
-            percent_max_fill = ""
+            percent_max_fill = 0
         elif edge_fill_method == "idw":
-            percent_max_fill = ""
+            percent_max_fill = 0
         else:
             print("Skipped - invalid edge fill method")
             continue
@@ -117,12 +123,12 @@ def parameter_sweep_analysis(
             print("Skipped - invalid blur type")
             continue
         
-        name += f"{gradient_method}_{int(dx)}_{int(dx)}"
+        name += f"{gradient_method}_{dx}_{dx}"
         if gradient_method == "plane":
             name += f"{window}"
         
         # Locate NPZ file
-        folder_name = Path(f"Assets/processed_pngs/{gerber_location}_dpi_{dpi_value}").expanduser().resolve()
+        folder_name = f"{processed_pngs_folder}/{gerber_location}_dpi_{dpi_value}"
         npz_file_location = f"{folder_name}/{gerber_location}_dpi_{dpi_value}.npz"
         
         # Check if NPZ exists
@@ -138,7 +144,7 @@ def parameter_sweep_analysis(
                 continue
         
         # Filter for Global files matching location
-        if "Global" not in str(akro_file) or gerber_location not in str(akro_file):
+        if "Global" not in str(akro_file) and gerber_location not in str(akro_file):
             continue
         else:
             dat_load = np.loadtxt(str(akro_file))
@@ -160,9 +166,7 @@ def parameter_sweep_analysis(
             calculated_layers_preblend_edge_mask = nearest_border_fill_true_2d(calculated_layers_preblend, mask=mask)
         elif edge_fill_method == 'percent_max':
             calculated_layers_preblend_edge_mask = fill_border_with_percent_max(
-                calculated_layers_preblend, mask=mask, percent=int(percent_max_fill)
-            )
-        
+                calculated_layers_preblend, mask=mask, percent=percent_max_fill)
         # Apply blur
         calculated_layers_blended = blur_call(calculated_layers_preblend_edge_mask, blur_type, radius, sigma)
         
@@ -171,9 +175,7 @@ def parameter_sweep_analysis(
         
         # Rescale to share the same min and max
         calculated_layers_blended_shrink_rescale, dat_file_9999_filled_rescale, scale = rescale_to_shared_minmax(
-            calculated_layers_blended_shrunk, dat_file_9999_filled
-        )
-        
+            calculated_layers_blended_shrunk, dat_file_9999_filled)       
         # Crop to center area
         dy = dx
         calculated_layers_blended_shrink_rescaled_cropped = center_crop_by_area(
@@ -193,13 +195,12 @@ def parameter_sweep_analysis(
         )
         
         metrics, angle_diff, mag_ratio = analyze_gradients(
-            calculated_layers_blended_shrink_rescale,
-            dat_file_9999_filled_rescale,
+            calculated_layers_blended_shrink_rescaled_cropped,
+            dat_file_9999_filled_rescale_cropped,
             dx=dx,
             dy=dy,
             method=gradient_method,
-            window_size=window,
-            make_plots=False
+            window_size=window
         )
         
         # Build output info

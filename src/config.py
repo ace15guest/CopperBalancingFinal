@@ -51,23 +51,24 @@ class Config:
     # Output file names
     DATA_OUTPUT_FILE = OUTPUT_DIR / 'data_out.csv'
     
-
-
+    # Processed PNG Folder
+    PROCESSED_PNG_FOLDER = ASSETS_DIR / 'processed_pngs' 
+   
     # Parameter Sweeping
     # Parameter sweep configurations
     PARAMETER_SWEEPS = {
-    'window_sizes': [1, 3, 5, 7, 9],
+    'window_sizes': [1, 3],
     'edge_fills': ['idw', 'nearest', 'percent_max'],  # pixels
-    'dx_choices': [1.0, 2, 5, 10.0],
-    'dpis': [50, 100, 200, 300, 500, 700],
-    'percent_max_fills': [0.5, 0.6, 0.7, 0.8, 0.9, 1.0],
+    'dx_choices': [1, 2, 5, 10],
+    'dpis': [50, 100],
+    'percent_max_fills': [0.5, 0.6],
     'blur_kernels': [3, 5, 7, 9],
     'gradient_methods': ['finite', 'plane'],
-    'gaussian_sigmas': [0.5, 1.0, 1.5, 2.0],
-    'blur_types': ['box', 'gaussian'],
-    'radii': [25, 50, 100, 250, 500],
-    'sigmas': [0.5, 1.0, 1.1, 1.5],
-    'percent_area_from_centers': [.25, .4, .6]    }
+    'gaussian_sigmas': [0.5, 1.0],
+    'blur_types': ['box_blur', 'gauss'],
+    'radii': [25, 50],
+    'sigmas': [0.5, 1.0],
+    'percent_area_from_centers': [.25, .4]}
 
     @classmethod
     def ensure_directories(cls):
@@ -79,7 +80,9 @@ class Config:
 
     @classmethod
     def get_gerber_dirs(cls):
-        cls.GERBER_FOLDERS = [f"{str(cls.ASSETS_DIR)}/gerbers/CU_Balancing_Gerber/{quad}" for quad in QUADRANTS]
+        cls.GERBER_FOLDERS = [f"{str(cls.ASSETS_DIR)}/gerbers/CU_Balancing_Gerber/{quad}" for quad in cls.QUADRANTS]
+        return cls.GERBER_FOLDERS
+
 
     
     @classmethod

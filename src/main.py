@@ -24,7 +24,7 @@ def main():
     radii = Config.PARAMETER_SWEEPS["radii"]
     sigmas = Config.PARAMETER_SWEEPS["sigmas"]
     percent_area_from_centers = Config.PARAMETER_SWEEPS["percent_area_from_centers"]
-    gerber_folders = Config.PARAMETER_SWEEPS["gerber_folders"]
+    gerber_folders = Config.get_gerber_dirs()
     output_path = Config.DATA_OUTPUT_FILE
 
     parameter_sweep_analysis(
@@ -40,7 +40,8 @@ def main():
         sigmas=sigmas,
         percent_area_from_centers=percent_area_from_centers,
         gerber_folders=gerber_folders,
-        output_file_path=str(output_path)
+        output_file_path=str(output_path),
+        processed_pngs_folder = str(Config.PROCESSED_PNG_FOLDER)
     )
 
 
