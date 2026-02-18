@@ -314,8 +314,9 @@ def parameter_sweep_analysis(
     output_file_path: str = "Assets/DataOutput/data_out.csv",
     processed_pngs_folder: str = "Assets/ProcessedPNGs/",
     batch_size: int = 10,
-    use_parallel: bool = True,
+    use_parallel: bool = False,
     n_workers: Optional[int] = None,
+    sample_percent: float = 100.0,
 ) -> pd.DataFrame:
     """
     Perform comprehensive parameter sweep analysis on Gerber processing.
@@ -348,8 +349,11 @@ def parameter_sweep_analysis(
         output_file_path: Path for output CSV file
         processed_pngs_folder: Base folder containing processed PNG/NPZ files
         batch_size: Number of results to accumulate before writing to CSV (default: 10)
-        use_parallel: Enable parallel processing (default: True)
-        n_workers: Number of worker processes (default: cpu_count() - 1)
+        use_parallel: Enable parallel processing for combinations (default: False)
+                     File loading is always parallel regardless of this setting
+        n_workers: Number of worker processes if use_parallel=True (default: min(4, cpu_count-2))
+        sample_percent: Percentage of combinations to process (5-100, default: 100)
+                       Use 5-10 for quick testing, 100 for full analysis
         
     Returns:
         pd.DataFrame: Complete results with all metrics for each parameter combination
@@ -493,6 +497,16 @@ def parameter_sweep_analysis(
             unprocessed_items.append(item)
     
     print(f"Filtered to {len(unprocessed_items)} unprocessed combinations")
+    
+    # ========================================
+    # Apply Sampling for Testing
+    # ========================================
+    if sample_percent < 100.0:
+        import random
+        sample_size = max(1, int(len(unprocessed_items) * sample_percent / 100.0))
+        unprocessed_items = random.sample(unprocessed_items, sample_size)
+        print(f"📊 SAMPLE MODE: Processing {sample_size} combinations ({sample_percent}% of total)")
+        print(f"   Use sample_percent=100 for full analysis")
     
     # ========================================
     # Process Combinations (Parallel or Sequential)
