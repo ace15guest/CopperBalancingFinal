@@ -15,14 +15,16 @@ The analysis tests all combinations of:
 Results are saved incrementally to CSV for analysis and visualization.
 
 Performance Optimizations:
-- Pre-loads and caches Akro reference files
-- Pre-loads and caches NPZ files
+- Pre-loads and caches Akro reference files with parallel loading
+- Pre-loads and caches NPZ files with parallel loading
 - Batch CSV writes to reduce I/O overhead
 - Early filtering of invalid parameter combinations
 - Efficient processed combinations tracking with sets
 - Parallel processing with multiprocessing for CPU-bound operations
 - Optimized array operations with minimal copying
 - Progress bars with tqdm for better user feedback
+- ThreadPoolExecutor for I/O-bound file loading
+- ProcessPoolExecutor for CPU-bound NaN filling
 """
 
 from pathlib import Path
@@ -33,6 +35,7 @@ import pandas as pd
 from multiprocessing import Pool, cpu_count
 from functools import partial
 from tqdm import tqdm
+from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor, as_completed
 
 # Import array operation utilities
 from lib.array_operations.border_operations import get_border_mask, center_crop_by_area
@@ -51,9 +54,39 @@ from lib.array_operations.gradient_analysis import analyze_gradients
 from lib.array_operations.comparison import align_and_compare
 
 
+def _load_akro_file_io(akro_file: Path) -> Tuple[Path, np.ndarray]:
+    """
+    Load Akro file (I/O operation only).
+    
+    Args:
+        akro_file: Path to Akro .dat file
+        
+    Returns:
+        Tuple of (file path, loaded array with 9999 replaced by NaN)
+    """
+    dat_load = np.loadtxt(str(akro_file))
+    dat_file_filled = np.where(dat_load == 9999.0, np.nan, dat_load)
+    return (akro_file, dat_file_filled)
+
+
+def _fill_nans_cpu(data: Tuple[Path, np.ndarray]) -> Tuple[str, np.ndarray]:
+    """
+    Fill NaN values (CPU-intensive operation).
+    
+    Args:
+        data: Tuple of (file path, array with NaNs)
+        
+    Returns:
+        Tuple of (file path string, filled array)
+    """
+    akro_file, dat_file_filled = data
+    filled = fill_nans_nd(dat_file_filled, 'iterative')
+    return (str(akro_file), filled)
+
+
 def _load_and_prepare_akro_file(akro_file: Path) -> np.ndarray:
     """
-    Load and prepare an Akro reference file.
+    Load and prepare an Akro reference file (sequential fallback).
     
     Args:
         akro_file: Path to Akro .dat file
@@ -62,13 +95,11 @@ def _load_and_prepare_akro_file(akro_file: Path) -> np.ndarray:
         Prepared numpy array with NaN values filled
     """
     dat_load = np.loadtxt(str(akro_file))
-    # Fill 9999 with nan
     dat_file_filled = np.where(dat_load == 9999.0, np.nan, dat_load)
-    # Replace the nan values to do an iterative fill (best guess at missing data)
     return fill_nans_nd(dat_file_filled, 'iterative')
 
 
-def _load_npz_file(npz_path: Path) -> Dict[str, np.ndarray]:
+def _load_npz_file(npz_path: Path) -> Tuple[str, Dict[str, np.ndarray]]:
     """
     Load NPZ file and return as dictionary.
     
@@ -76,10 +107,11 @@ def _load_npz_file(npz_path: Path) -> Dict[str, np.ndarray]:
         npz_path: Path to NPZ file
         
     Returns:
-        Dictionary of arrays from NPZ file
+        Tuple of (file path string, dictionary of arrays from NPZ file)
     """
     with np.load(npz_path) as data:
-        return {key: data[key] for key in data.files}
+        result = {key: data[key] for key in data.files}
+    return (str(npz_path), result)
 
 
 def _build_combination_name(
@@ -343,38 +375,67 @@ def parameter_sweep_analysis(
         print(f"Found {len(processed_names)} already processed combinations")
     
     # ========================================
-    # Pre-load All Akro Files
+    # Pre-load All Akro Files with Parallel Loading
     # ========================================
-    print("Pre-loading all Akro files...")
+    print("Pre-loading all Akro files (parallel I/O + CPU processing)...")
     akro_cache: Dict[str, np.ndarray] = {}
-    for akro_file in all_akro_files:
-        akro_key = str(akro_file)
-        try:
-            akro_cache[akro_key] = _load_and_prepare_akro_file(akro_file)
-        except Exception as e:
-            print(f"Warning: Failed to load {akro_file}: {e}")
-    print(f"Loaded {len(akro_cache)} Akro files into cache")
+    
+    # Step 1: Parallel I/O loading with ThreadPoolExecutor
+    loaded_data = []
+    with ThreadPoolExecutor(max_workers=min(8, len(all_akro_files))) as executor:
+        futures = {executor.submit(_load_akro_file_io, f): f for f in all_akro_files}
+        with tqdm(total=len(all_akro_files), desc="Loading Akro files (I/O)", unit="file") as pbar:
+            for future in as_completed(futures):
+                try:
+                    loaded_data.append(future.result())
+                except Exception as e:
+                    tqdm.write(f"Warning: Failed to load {futures[future]}: {e}")
+                pbar.update(1)
+    
+    # Step 2: Parallel CPU processing with ProcessPoolExecutor
+    with ProcessPoolExecutor(max_workers=min(cpu_count(), len(loaded_data))) as executor:
+        futures = {executor.submit(_fill_nans_cpu, data): data for data in loaded_data}
+        with tqdm(total=len(loaded_data), desc="Processing Akro files (CPU)", unit="file") as pbar:
+            for future in as_completed(futures):
+                try:
+                    akro_key, filled_array = future.result()
+                    akro_cache[akro_key] = filled_array
+                except Exception as e:
+                    tqdm.write(f"Warning: Failed to process Akro file: {e}")
+                pbar.update(1)
+    
+    print(f"✓ Loaded {len(akro_cache)} Akro files into cache")
     
     
     # ========================================
-    # Pre-load and Cache NPZ Files
+    # Pre-load and Cache NPZ Files with Parallel Loading
     # ========================================
-    print("Pre-loading NPZ files...")
+    print("Pre-loading NPZ files (parallel I/O)...")
     npz_cache: Dict[str, Dict[str, np.ndarray]] = {}
+    npz_paths = []
     for folder in gerber_folders:
         gerber_location = str(folder).replace("/", "\\").split('\\')[-1]
         for dpi_value in dpi:
             folder_name = f"{processed_pngs_folder}/{gerber_location}_dpi_{dpi_value}"
             npz_file_location = f"{folder_name}/{gerber_location}_dpi_{dpi_value}.npz"
             npz_path = Path(npz_file_location)
-            
             if npz_path.exists():
+                npz_paths.append(npz_path)
+    
+    # Parallel NPZ loading with ThreadPoolExecutor
+    with ThreadPoolExecutor(max_workers=min(8, len(npz_paths))) as executor:
+        futures = {executor.submit(_load_npz_file, path): path for path in npz_paths}
+        with tqdm(total=len(npz_paths), desc="Loading NPZ files", unit="file") as pbar:
+            for future in as_completed(futures):
                 try:
-                    npz_cache[npz_file_location] = _load_npz_file(npz_path)
+                    npz_key, npz_data = future.result()
+                    npz_cache[npz_key] = npz_data
                 except Exception as e:
-                    print(f"Warning: Failed to load {npz_file_location}: {e}")
+                    tqdm.write(f"Warning: Failed to load NPZ file: {e}")
+                pbar.update(1)
+    
     npz_cache_list = [Path(x) for x in list(npz_cache)]
-    print(f"Loaded {len(npz_cache)} NPZ files into cache")
+    print(f"✓ Loaded {len(npz_cache)} NPZ files into cache")
     
     # ========================================
     # Filter Valid Parameter Combinations
@@ -440,11 +501,13 @@ def parameter_sweep_analysis(
     processed = 0
     
     if use_parallel and len(unprocessed_items) > 1:
-        # Parallel processing
+        # Parallel processing with resource limits
         if n_workers is None:
-            n_workers = max(1, cpu_count() - 1)
+            # Conservative default: use fewer workers to avoid overwhelming system
+            n_workers = max(1, min(4, cpu_count() - 2))
         
         print(f"Using parallel processing with {n_workers} workers")
+        print(f"Tip: Reduce workers with n_workers parameter if system is overloaded")
         
         # Create partial function with fixed arguments
         process_func = partial(
@@ -454,10 +517,12 @@ def parameter_sweep_analysis(
             processed_pngs_folder=processed_pngs_folder
         )
         
-        # Process in parallel with progress bar
+        # Process in parallel with progress bar and chunking to limit memory
+        # Use chunksize to process in smaller batches
+        chunksize = max(1, len(unprocessed_items) // (n_workers * 4))
         with Pool(processes=n_workers) as pool:
             pbar = tqdm(total=len(unprocessed_items), desc="Processing combinations", unit="combo")
-            for i, result in enumerate(pool.imap_unordered(process_func, unprocessed_items), 1):
+            for i, result in enumerate(pool.imap_unordered(process_func, unprocessed_items, chunksize=chunksize), 1):
                 if result is not None:
                     results_batch.append(result)
                     processed_names.add(result["Name"])
