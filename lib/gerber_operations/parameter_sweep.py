@@ -176,7 +176,7 @@ def parameter_sweep_analysis(
     gerber_folders: List[str],
     output_file_path: str = "Assets/DataOutput/data_out.csv",
     processed_pngs_folder: str = "Assets/ProcessedPNGs/",
-    batch_size: int = 10,
+    batch_size: int = 5,
     sample_percent: float = 5,
 ) -> pd.DataFrame:
     """

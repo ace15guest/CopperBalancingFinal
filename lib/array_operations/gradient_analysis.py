@@ -95,10 +95,14 @@ def compute_gradients(
         wx = np.arange(-half, half + 1) * dx
         WY, WX = np.meshgrid(wy, wx, indexing="ij")
 
-        # Flatten for least squares
+        # Flatten for least squares and precompute base matrix
         X_flat = WX.ravel()
         Y_flat = WY.ravel()
-        A_base = np.column_stack([X_flat, Y_flat, np.ones_like(X_flat)])
+        ones = np.ones_like(X_flat)
+        A_base = np.column_stack([X_flat, Y_flat, ones])
+        
+        # Precompute reshaped A_base to avoid repeated reshaping
+        A_base_3d = A_base.reshape(window_size, window_size, 3)
 
         for i in range(ny):
             for j in range(nx):
@@ -110,11 +114,12 @@ def compute_gradients(
                 patch = Z[r0:r1, c0:c1]
                 pr, pc = patch.shape
 
-                # Take matching rows from A_base
-                A = A_base.reshape(window_size, window_size, 3)[:pr, :pc].reshape(-1, 3)
+                # Take matching rows from precomputed A_base_3d
+                A = A_base_3d[:pr, :pc].reshape(-1, 3)
                 z_vec = patch.ravel()
 
-                coeffs, *_ = np.linalg.lstsq(A, z_vec, rcond=None)
+                # Use lstsq with optimal rcond and only extract coefficients
+                coeffs = np.linalg.lstsq(A, z_vec, rcond=None)[0]
                 gx[i, j] = coeffs[0]
                 gy[i, j] = coeffs[1]
 
@@ -148,32 +153,28 @@ def compare_gradient_fields(gx_m, gy_m, gx_r, gy_r, eps=1e-12):
     mag_ratio : 2D ndarray
         Magnitude ratio map: |∇Z_ref| / |∇Z_model|
     """
-    g_m = np.stack([gx_m, gy_m], axis=-1)
-    g_r = np.stack([gx_r, gy_r], axis=-1)
+    # Compute magnitudes directly without stacking (more efficient)
+    mag_m = np.sqrt(gx_m**2 + gy_m**2)
+    mag_r = np.sqrt(gx_r**2 + gy_r**2)
 
-    mag_m = np.linalg.norm(g_m, axis=-1)
-    mag_r = np.linalg.norm(g_r, axis=-1)
-
-    dot = np.sum(g_m * g_r, axis=-1)
+    # Compute dot product directly
+    dot = gx_m * gx_r + gy_m * gy_r
     denom = mag_m * mag_r + eps
     cos_theta = np.clip(dot / denom, -1.0, 1.0)
     angle_diff = np.degrees(np.arccos(cos_theta))
 
     mag_ratio = mag_r / (mag_m + eps)
 
-    # Summary metrics
-    angle_flat = angle_diff.ravel()
-    ratio_flat = mag_ratio.ravel()
-
+    # Summary metrics - compute directly on 2D arrays (no need to ravel first)
     metrics = {
-        "angle_mean_deg": float(np.mean(angle_flat)),
-        "angle_median_deg": float(np.median(angle_flat)),
-        "angle_p95_deg": float(np.percentile(angle_flat, 95)),
+        "angle_mean_deg": float(np.mean(angle_diff)),
+        "angle_median_deg": float(np.median(angle_diff)),
+        "angle_p95_deg": float(np.percentile(angle_diff, 95)),
 
-        "mag_ratio_mean": float(np.mean(ratio_flat)),
-        "mag_ratio_median": float(np.median(ratio_flat)),
-        "mag_ratio_p05": float(np.percentile(ratio_flat, 5)),
-        "mag_ratio_p95": float(np.percentile(ratio_flat, 95)),
+        "mag_ratio_mean": float(np.mean(mag_ratio)),
+        "mag_ratio_median": float(np.median(mag_ratio)),
+        "mag_ratio_p05": float(np.percentile(mag_ratio, 5)),
+        "mag_ratio_p95": float(np.percentile(mag_ratio, 95)),
     }
 
     return metrics, angle_diff, mag_ratio
