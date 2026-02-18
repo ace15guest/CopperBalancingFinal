@@ -33,9 +33,9 @@ def analyze_gradients(
     )
 
     # Print summary
-    print("=== Gradient Comparison Metrics ===")
-    for k, v in metrics.items():
-        print(f"{k:18s}: {v:.4f}")
+    # print("=== Gradient Comparison Metrics ===")
+    # for k, v in metrics.items():
+    #     print(f"{k:18s}: {v:.4f}")
 
     # Plot
     # if make_plots:

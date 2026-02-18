@@ -57,10 +57,10 @@ class Config:
     # Parameter Sweeping
     # Parameter sweep configurations
     PARAMETER_SWEEPS = {
-    'window_sizes': [1, 3],
-    'edge_fills': ['idw', 'nearest', 'percent_max'],  # pixels
+    'window_sizes': [3],
+    'edge_fills': ['idw'],  # pixels
     'dx_choices': [1, 2, 5, 10],
-    'dpis': [50, 100],
+    'dpis': [250, 500],
     'percent_max_fills': [0.5, 0.6],
     'blur_kernels': [3, 5, 7, 9],
     'gradient_methods': ['finite', 'plane'],
@@ -68,7 +68,7 @@ class Config:
     'blur_types': ['box_blur', 'gauss'],
     'radii': [25, 50],
     'sigmas': [0.5, 1.0],
-    'percent_area_from_centers': [.25, .4]}
+    'percent_area_from_centers': [.25, .5]}
 
     @classmethod
     def ensure_directories(cls):

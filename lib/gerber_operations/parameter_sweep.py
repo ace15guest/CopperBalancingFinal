@@ -29,13 +29,12 @@ Performance Optimizations:
 
 from pathlib import Path
 from itertools import product
-from typing import List, Dict, Any, Set, Tuple, Optional
+from typing import List, Dict, Any, Set, Tuple
 import numpy as np
 import pandas as pd
-from multiprocessing import Pool, cpu_count
-from functools import partial
 from tqdm import tqdm
 from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor, as_completed
+from multiprocessing import cpu_count
 
 # Import array operation utilities
 from lib.array_operations.border_operations import get_border_mask, center_crop_by_area
@@ -154,148 +153,12 @@ def _build_combination_name(
     return name
 
 
-def _process_single_combination(
-    args: Tuple,
-    akro_cache: Dict[str, np.ndarray],
-    npz_cache: Dict[str, Dict[str, np.ndarray]],
-    processed_pngs_folder: str
-) -> Optional[Dict[str, Any]]:
-    """
-    Process a single parameter combination.
-    
-    This function is designed to be called in parallel by multiprocessing.
-    
-    Args:
-        args: Tuple of parameters for this combination
-        akro_cache: Pre-loaded Akro files
-        npz_cache: Pre-loaded NPZ files
-        processed_pngs_folder: Base folder for processed files
-        
-    Returns:
-        Dictionary with results or None if skipped
-    """
-    from lib.array_operations.blur_filters import blur_call
-    
-    (window, dx, gradient_method, percent_max_fill, akro_file, dpi_value,
-     edge_fill_method, blur_type, radius, sigma, percent_from_cntr, folder) = args
-    
-    # Extract metadata
-    gerber_location = str(folder).replace("/", "\\").split('\\')[-1]
-    akro_filename = str(akro_file).split('\\')[-1]
-    side = akro_filename.split('_')[1]
-    company = akro_filename.split('-')[0]
-    material = akro_filename.split('-')[1]
-    
-    # Validate NPZ file exists
-    npz_file_location = f"{processed_pngs_folder}/{gerber_location}_dpi_{dpi_value}/{gerber_location}_dpi_{dpi_value}.npz"
-    if npz_file_location not in npz_cache:
-        return None
-    
-    # Filter Akro file match
-    if "Global" not in str(akro_file) and gerber_location not in str(akro_file):
-        return None
-    
-    # Get cached data
-    akro_key = str(akro_file)
-    if akro_key not in akro_cache:
-        return None
-    
-    dat_file_9999_filled = akro_cache[akro_key]
-    data_dict = npz_cache[npz_file_location]
-    
-    # Process Gerber layers
-    calculated_layers_preblend = multiple_layers_weighted(data_dict)
-    mask = get_border_mask(calculated_layers_preblend)
-    
-    # Apply edge filling
-    if edge_fill_method == 'idw':
-        calculated_layers_preblend_edge_mask = idw_fill_2d(
-            calculated_layers_preblend, mask=mask
-        )
-    elif edge_fill_method == 'nearest':
-        calculated_layers_preblend_edge_mask = nearest_border_fill_true_2d(
-            calculated_layers_preblend, mask=mask
-        )
-    elif edge_fill_method == 'percent_max':
-        calculated_layers_preblend_edge_mask = fill_border_with_percent_max(
-            calculated_layers_preblend, mask=mask, percent=percent_max_fill
-        )
-    else:
-        return None
-    
-    # Apply blur
-    calculated_layers_blended = blur_call(
-        calculated_layers_preblend_edge_mask, blur_type, radius, sigma
-    )
-    
-    # Align dimensions
-    calculated_layers_blended_shrunk = shrink_array(
-        calculated_layers_blended, dat_file_9999_filled.shape
-    )
-    
-    # Rescale
-    (calculated_layers_blended_shrink_rescale,
-     dat_file_9999_filled_rescale,
-     scale) = rescale_to_shared_minmax(
-        calculated_layers_blended_shrunk, dat_file_9999_filled
-    )
-    
-    # Crop to center
-    dy = dx
-    calculated_layers_blended_shrink_rescaled_cropped = center_crop_by_area(
-        calculated_layers_blended_shrink_rescale, pct_area=percent_from_cntr)
-    dat_file_9999_filled_rescale_cropped = center_crop_by_area(
-        dat_file_9999_filled_rescale, pct_area=percent_from_cntr)
-    
-    # Calculate statistics
-    stats = align_and_compare(
-        calculated_layers_blended_shrink_rescaled_cropped,
-        dat_file_9999_filled_rescale_cropped,
-        ignore_zeros=False,
-        detrend=True,
-        with_scaling=False
-    )
-    
-    # Calculate gradients
-    metrics, angle_diff, mag_ratio = analyze_gradients(
-        calculated_layers_blended_shrink_rescaled_cropped,
-        dat_file_9999_filled_rescale_cropped,
-        dx=dx,
-        dy=dy,
-        method=gradient_method,
-        window_size=window
-    )
-    
-    # Build output record
-    name = _build_combination_name(
-        company, dpi_value, percent_from_cntr, material, gerber_location,
-        side, edge_fill_method, percent_max_fill, blur_type, radius,
-        sigma, gradient_method, dx, window
-    )
-    
-    out_info = {
-        "Name": name,
-        "DPI": dpi_value,
-        "Percent from Center": percent_from_cntr,
-        "Material": material,
-        "Location": gerber_location,
-        "Side": side,
-        "Edge Fill": edge_fill_method,
-        "Percent Max Fill": percent_max_fill if edge_fill_method == "percent_max" else 0,
-        "Blur Type": blur_type,
-        "Radius": radius if blur_type == "box_blur" else "",
-        "Sigma": sigma if blur_type == "gauss" else "",
-        "Gradient Method": gradient_method,
-        "Dx": dx,
-        "Dy": dy,
-        "Window": window,
-    }
-    
-    out_info.update(stats)
-    out_info.update(metrics)
-    out_info.pop("text", None)
-    
-    return out_info
+def take_percent(lst, p):
+    """Return the first p% of the list by position."""
+    if not (0 <= p <= 100):
+        raise ValueError("p must be between 0 and 100.")
+    k = int(len(lst) * p / 100)
+    return lst[-k:]
 
 
 def parameter_sweep_analysis(
@@ -314,23 +177,20 @@ def parameter_sweep_analysis(
     output_file_path: str = "Assets/DataOutput/data_out.csv",
     processed_pngs_folder: str = "Assets/ProcessedPNGs/",
     batch_size: int = 10,
-    use_parallel: bool = False,
-    n_workers: Optional[int] = None,
-    sample_percent: float = 100.0,
+    sample_percent: float = 5,
 ) -> pd.DataFrame:
     """
     Perform comprehensive parameter sweep analysis on Gerber processing.
     
-    This function processes all combinations of parameters, comparing processed
+    This function iterates through all combinations of parameters, comparing processed
     Gerber data against reference Akro files. Each combination is tested and
     results are saved incrementally to avoid data loss during long runs.
     
     Performance optimizations include:
-    - Pre-loading and caching of Akro and NPZ files
+    - Pre-loading and caching of Akro and NPZ files with parallel loading
     - Batch CSV writes to reduce I/O overhead
     - Early filtering of invalid combinations
     - Efficient tracking of processed combinations
-    - Optional parallel processing with multiprocessing
     - Optimized array operations
     
     Parameters:
@@ -349,10 +209,7 @@ def parameter_sweep_analysis(
         output_file_path: Path for output CSV file
         processed_pngs_folder: Base folder containing processed PNG/NPZ files
         batch_size: Number of results to accumulate before writing to CSV (default: 10)
-        use_parallel: Enable parallel processing for combinations (default: False)
-                     File loading is always parallel regardless of this setting
-        n_workers: Number of worker processes if use_parallel=True (default: min(4, cpu_count-2))
-        sample_percent: Percentage of combinations to process (5-100, default: 100)
+        sample_percent: Percentage of combinations to process (5-100, default: 5)
                        Use 5-10 for quick testing, 100 for full analysis
         
     Returns:
@@ -363,7 +220,7 @@ def parameter_sweep_analysis(
         - Already processed combinations are skipped automatically
         - Invalid parameter combinations are filtered out early
         - Progress is printed to console for monitoring
-        - Parallel processing significantly speeds up CPU-bound operations
+        - File loading uses parallel I/O for better performance
     """
     # ========================================
     # Initialize Output File Tracking
@@ -386,6 +243,7 @@ def parameter_sweep_analysis(
     
     # Step 1: Parallel I/O loading with ThreadPoolExecutor
     loaded_data = []
+    all_akro_files = take_percent(all_akro_files, sample_percent)
     with ThreadPoolExecutor(max_workers=min(8, len(all_akro_files))) as executor:
         futures = {executor.submit(_load_akro_file_io, f): f for f in all_akro_files}
         with tqdm(total=len(all_akro_files), desc="Loading Akro files (I/O)", unit="file") as pbar:
@@ -415,7 +273,7 @@ def parameter_sweep_analysis(
     # Pre-load and Cache NPZ Files with Parallel Loading
     # ========================================
     print("Pre-loading NPZ files (parallel I/O)...")
-    npz_cache: Dict[str, Dict[str, np.ndarray]] = {}
+    npz_cache: Dict[Path, Dict[str, np.ndarray]] = {}
     npz_paths = []
     for folder in gerber_folders:
         gerber_location = str(folder).replace("/", "\\").split('\\')[-1]
@@ -433,11 +291,11 @@ def parameter_sweep_analysis(
             for future in as_completed(futures):
                 try:
                     npz_key, npz_data = future.result()
-                    npz_cache[npz_key] = npz_data
+                    npz_cache[Path(npz_key)] = npz_data
                 except Exception as e:
                     tqdm.write(f"Warning: Failed to load NPZ file: {e}")
                 pbar.update(1)
-    
+    # We must do this oconversion to path since strings cannot match the output
     npz_cache_list = [Path(x) for x in list(npz_cache)]
     print(f"✓ Loaded {len(npz_cache)} NPZ files into cache")
     
@@ -509,68 +367,146 @@ def parameter_sweep_analysis(
         print(f"   Use sample_percent=100 for full analysis")
     
     # ========================================
-    # Process Combinations (Parallel or Sequential)
+    # Process Combinations
     # ========================================
+    from lib.array_operations.blur_filters import blur_call
+    
     results_batch = []
     processed = 0
     
-    if use_parallel and len(unprocessed_items) > 1:
-        # Parallel processing with resource limits
-        if n_workers is None:
-            # Conservative default: use fewer workers to avoid overwhelming system
-            n_workers = max(1, min(4, cpu_count() - 2))
+    print("Processing combinations...")
+    for item in tqdm(unprocessed_items, desc="Processing combinations", unit="combo"):
+        # Unpack parameters
+        (window, dx, gradient_method, percent_max_fill, akro_file, dpi_value,
+         edge_fill_method, blur_type, radius, sigma, percent_from_cntr, folder) = item
         
-        print(f"Using parallel processing with {n_workers} workers")
-        print(f"Tip: Reduce workers with n_workers parameter if system is overloaded")
+        # Extract metadata
+        gerber_location = str(folder).replace("/", "\\").split('\\')[-1]
+        akro_filename = str(akro_file).split('\\')[-1]
+        side = akro_filename.split('_')[1]
+        company = akro_filename.split('-')[0]
+        material = akro_filename.split('-')[1]
         
-        # Create partial function with fixed arguments
-        process_func = partial(
-            _process_single_combination,
-            akro_cache=akro_cache,
-            npz_cache=npz_cache,
-            processed_pngs_folder=processed_pngs_folder
+        # Validate NPZ file exists
+        npz_file_location = f"{processed_pngs_folder}/{gerber_location}_dpi_{dpi_value}/{gerber_location}_dpi_{dpi_value}.npz"
+        if Path(npz_file_location) not in npz_cache_list:
+            continue
+        
+        # Filter Akro file match
+        if "Global" not in str(akro_file) and gerber_location not in str(akro_file):
+            continue
+        
+        # Get cached data
+        akro_key = str(akro_file)
+        if akro_key not in akro_cache:
+            continue
+        
+        dat_file_9999_filled = akro_cache[akro_key]
+        data_dict = npz_cache[Path(npz_file_location)]
+        
+        # Process Gerber layers
+        calculated_layers_preblend = multiple_layers_weighted(data_dict)
+        mask = get_border_mask(calculated_layers_preblend)
+        
+        # Apply edge filling
+        if edge_fill_method == 'idw':
+            calculated_layers_preblend_edge_mask = idw_fill_2d(
+                calculated_layers_preblend, mask=mask
+            )
+        elif edge_fill_method == 'nearest':
+            calculated_layers_preblend_edge_mask = nearest_border_fill_true_2d(
+                calculated_layers_preblend, mask=mask
+            )
+        elif edge_fill_method == 'percent_max':
+            calculated_layers_preblend_edge_mask = fill_border_with_percent_max(
+                calculated_layers_preblend, mask=mask, percent=percent_max_fill
+            )
+        else:
+            continue
+        
+        # Apply blur
+        calculated_layers_blended = blur_call(
+            calculated_layers_preblend_edge_mask, blur_type, radius, sigma
         )
         
-        # Process in parallel with progress bar and chunking to limit memory
-        # Use chunksize to process in smaller batches
-        chunksize = max(1, len(unprocessed_items) // (n_workers * 4))
-        with Pool(processes=n_workers) as pool:
-            pbar = tqdm(total=len(unprocessed_items), desc="Processing combinations", unit="combo")
-            for i, result in enumerate(pool.imap_unordered(process_func, unprocessed_items, chunksize=chunksize), 1):
-                if result is not None:
-                    results_batch.append(result)
-                    processed_names.add(result["Name"])
-                    processed += 1
-                    
-                    # Write batch to CSV
-                    if len(results_batch) >= batch_size:
-                        batch_df = pd.DataFrame(results_batch)
-                        batch_df.to_csv(output_file_path, mode="a", index=False, header=write_header)
-                        write_header = False
-                        results_batch = []
-                        pbar.set_postfix({"processed": processed, "batches_written": i // batch_size})
-                
-                pbar.update(1)
-            pbar.close()
-    else:
-        # Sequential processing with progress bar
-        print("Using sequential processing")
-        for item in tqdm(unprocessed_items, desc="Processing combinations", unit="combo"):
-            result = _process_single_combination(
-                item, akro_cache, npz_cache, processed_pngs_folder
-            )
-            
-            if result is not None:
-                results_batch.append(result)
-                processed_names.add(result["Name"])
-                processed += 1
-                
-                # Write batch to CSV
-                if len(results_batch) >= batch_size:
-                    batch_df = pd.DataFrame(results_batch)
-                    batch_df.to_csv(output_file_path, mode="a", index=False, header=write_header)
-                    write_header = False
-                    results_batch = []
+        # Align dimensions
+        calculated_layers_blended_shrunk = shrink_array(
+            calculated_layers_blended, dat_file_9999_filled.shape
+        )
+        
+        # Rescale
+        (calculated_layers_blended_shrink_rescale,
+         dat_file_9999_filled_rescale,
+         scale) = rescale_to_shared_minmax(
+            calculated_layers_blended_shrunk, dat_file_9999_filled
+        )
+        
+        # Crop to center
+        dy = dx
+        calculated_layers_blended_shrink_rescaled_cropped = center_crop_by_area(
+            calculated_layers_blended_shrink_rescale, pct_area=percent_from_cntr)
+        dat_file_9999_filled_rescale_cropped = center_crop_by_area(
+            dat_file_9999_filled_rescale, pct_area=percent_from_cntr)
+        
+        # Calculate statistics
+        stats = align_and_compare(
+            calculated_layers_blended_shrink_rescaled_cropped,
+            dat_file_9999_filled_rescale_cropped,
+            ignore_zeros=False,
+            detrend=True,
+            with_scaling=False
+        )
+        
+        # Calculate gradients
+        metrics, angle_diff, mag_ratio = analyze_gradients(
+            calculated_layers_blended_shrink_rescaled_cropped,
+            dat_file_9999_filled_rescale_cropped,
+            dx=dx,
+            dy=dy,
+            method=gradient_method,
+            window_size=window
+        )
+        
+        # Build output record
+        name = _build_combination_name(
+            company, dpi_value, percent_from_cntr, material, gerber_location,
+            side, edge_fill_method, percent_max_fill, blur_type, radius,
+            sigma, gradient_method, dx, window
+        )
+        
+        out_info = {
+            "Name": name,
+            "DPI": dpi_value,
+            "Percent from Center": percent_from_cntr,
+            "Material": material,
+            "Location": gerber_location,
+            "Side": side,
+            "Edge Fill": edge_fill_method,
+            "Percent Max Fill": percent_max_fill if edge_fill_method == "percent_max" else 0,
+            "Blur Type": blur_type,
+            "Radius": radius if blur_type == "box_blur" else "",
+            "Sigma": sigma if blur_type == "gauss" else "",
+            "Gradient Method": gradient_method,
+            "Dx": dx,
+            "Dy": dy,
+            "Window": window,
+        }
+        
+        out_info.update(stats)
+        out_info.update(metrics)
+        out_info.pop("text", None)
+        
+        # Add to batch
+        results_batch.append(out_info)
+        processed_names.add(name)
+        processed += 1
+        
+        # Write batch to CSV
+        if len(results_batch) >= batch_size:
+            batch_df = pd.DataFrame(results_batch)
+            batch_df.to_csv(output_file_path, mode="a", index=False, header=write_header)
+            write_header = False
+            results_batch = []
     
     # ========================================
     # Write Remaining Results
